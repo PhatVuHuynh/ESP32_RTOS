@@ -4,11 +4,12 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <WebSocketsServer.h>
 
 // #include "Adafruit_MQTT.h"
 // #include "Adafruit_MQTT_Client.h"
 
-
+#define RELAY_MANUAL_AUTO_TIME 10
 
 #define WLAN_SSID "RNM esp sida"
 #define WLAN_PASS "whyarewestillhere"
@@ -18,6 +19,7 @@ IPAddress gateway(192,168,1,1);
 IPAddress subnet(255,255,255,0);
 
 WebServer server(80);
+WebSocketsServer webSocket = WebSocketsServer(81);
 
 // #define AIO_SERVER      "io.adafruit.com"
 // #define AIO_SERVERPORT  1883
@@ -67,6 +69,22 @@ Adafruit_NeoPixel pixels3(4, D7, NEO_GRB + NEO_KHZ800);
 DHT20 dht20;
 LiquidCrystal_I2C lcd(33,16,2);
 
+// int pubCount = 0;
+float temp = 0.0;
+float humid = 0.0;
+uint16_t moist = 0;
+uint16_t lightRes = 0;
+
+bool LED_BUILTIN_STATUS = LOW;
+bool RELAY_STATUS = LOW;
+bool RGB_STATUS = LOW;
+uint16_t RELAY_AUTO_COUNT = 0;
+
+String tempS;
+String humidS;
+String lightResS;
+String moistS;
+
 // void slidercallback(double x) {
 //   Serial.print("Hey we're in a slider callback, the slider value is: ");
 //   Serial.println(x);
@@ -114,11 +132,12 @@ void setup() {
   // pinMode(LED_BUILTIN, OUTPUT);
   // Serial.println("123");
 
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  // Serial.print("IP address: ");
+  // Serial.println(WiFi.localIP());
 
-  WiFi.softAP(WLAN_SSID, WLAN_PASS);
   WiFi.softAPConfig(local_ip, gateway, subnet);
+  WiFi.softAP(WLAN_SSID, WLAN_PASS);
+  
   // WiFi.mode(WIFI_STA);
   // WiFi.begin(WLAN_SSID, WLAN_PASS);
 
@@ -139,11 +158,14 @@ void setup() {
   // server.on("/t", handle_temp_humid);
   server.on("/relayOn", handle_relayOn);
   server.on("/relayOff", handle_relayOff);
+  server.on("/RGBOn", handle_RGBOn);
+  server.on("/RGBOff", handle_RGBOff);
   // server.on("/l", handle_light);
   // server.on("/ledon", handle_ledOn);
   // server.on("/ledoff", handle_ledOff);
   server.onNotFound(handle_NotFound);
   server.begin();
+  webSocket.begin();
   Serial.println("Server Started.");
 
   // slider.setCallback(slidercallback);
@@ -159,23 +181,18 @@ void setup() {
   
   
   //Now the task scheduler is automatically started.
-  Serial.printf("Basic Multi Threading Arduino Example\n");
-  
-  
-  
+  Serial.printf("Basic Multi Threading Arduino Example\n"); 
 }
-// int pubCount = 0;
-float temp = 0.0;
-float humid = 0.0;
-uint16_t moist = 0;
-uint16_t lightRes = 0;
-
-// bool LED_BUILTIN_STATUS = LOW;
-bool RELAY_STATUS = LOW;
-bool RGB_STATUS = LOW;
 
 void loop() {
-  server.handleClient();
+  webSocket.loop();
+
+  uint8_t test[2];
+  test[0] = moist;
+  test[1] = lightRes;
+
+  // webSocket.broadcastTXT(moistS);
+  webSocket.broadcastTXT(test, 16);
   // if(LED_BUILTIN_STATUS){
   //   digitalWrite(LED_BUILTIN, HIGH);
   // }
@@ -191,47 +208,65 @@ void loop() {
 
 String getHTML(){
   String htmlcode = "<!DOCTYPE html> <html>\n";
-  htmlcode += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+  htmlcode += "<head><meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'>\n";
   htmlcode += "<tittle>Test</tittle>\n";
-  // htmlcode += "<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>";
+
+  htmlcode += "<script>\n var Socket;\n";
+  htmlcode += "function init(){\n";
+  htmlcode += "Socket = new WebSocket('ws://' + window.location.hostname + ':81/');\n";
+  htmlcode += "Socket.onmessage = function(event){\n";
+  htmlcode += "processCommand(event);};}\n";
+
+  htmlcode += "function processCommand(event){\n";
+  htmlcode += "document.getElementById('moist').innerHTML = event.data;\n";
+  htmlcode += "document.getElementById('light').innerHTML = event.data[1];\n";
+  htmlcode += "console.log(event);}\n";
+  htmlcode += "window.onload = function(event){\n";
+  htmlcode += "init();}\n";
+  htmlcode += "</script>";
 
   htmlcode += "</head>\n";
   htmlcode += "<body>\n";
   htmlcode += "<h1>Yolo Uno Mini Server</h1>\n";
   htmlcode += "<h3>Simple demo using AP mode</h3>\n";
 
-  String tempS = (String)temp;
+  Serial.print("moist html: ");
+  Serial.println(moistS);
+
   htmlcode += "<p>Temperature: ";
   htmlcode += tempS;
   htmlcode += "C</p>\n";
 
-  String humidS = (String)humid;
   htmlcode += "<p>Humid: ";
   htmlcode += humidS;
   htmlcode += "%</p>\n";
 
-  String moistS = String(moist * 100 / 4096);
   htmlcode += "<p>Moist: ";
-  htmlcode += moistS;
-  htmlcode += "%</p>\n";
+  // htmlcode += moistS;
+  htmlcode += "<span id = 'moist'></span>%";
+  htmlcode += "</p>\n";
 
   if(RELAY_STATUS){
-    htmlcode += "<p>Relay status: ON</p><a href=\"/ledoff\">Please turn off relay</a>\n";
+    htmlcode += "<p>Relay status: ON</p><a href='/relayOff'>Please turn off relay</a>\n";
   }
   else{
-    htmlcode += "<p>Relay status: OFF</p><a href=\"/ledon\">Please turn on relay</a>\n";
+    htmlcode += "<p>Relay status: OFF</p><a href='/relayOn'>Please turn on relay</a>\n";
   }
 
-  String lightResS = String(lightRes * 100 / 4096);
   htmlcode += "<p>Light: ";
-  htmlcode += lightResS;
-  htmlcode += "%</p>\n";
+  // htmlcode += moistS;
+  htmlcode += "<span id = 'light'></span>%";
+  htmlcode += "</p>\n";
+
+  // htmlcode += "<p>Light: ";
+  // htmlcode += lightResS;
+  // htmlcode += "%</p>\n";
 
   if(RGB_STATUS){
-    htmlcode += "<p>RGB LED status: ON</p><a href=\"/ledoff\">Please turn off RGB LED</a>\n";
+    htmlcode += "<p>RGB LED status: ON</p><a href='/RBGOff'>Please turn off RGB LED</a>\n";
   }
   else{
-    htmlcode += "<p>RGB LED status: OFF</p><a href=\"/ledon\">Please turn on RGB LED</a>\n";
+    htmlcode += "<p>RGB LED status: OFF</p><a href='/RBGOn'>Please turn on RGB LED</a>\n";
   }
 
   htmlcode += "</body>\n";
@@ -253,14 +288,28 @@ void handle_Onconnect(){
 // }
 
 void handle_relayOn(){
-  // LED_BUILTIN_STATUS = HIGH;
+  RELAY_STATUS = HIGH;
+  RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
   Serial.println("Relay status: ON");
   server.send(200, "text/html", getHTML());
 }
 
 void handle_relayOff(){
-  // LED_BUILTIN_STATUS = LOW;
+  RELAY_STATUS = LOW;
+  RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
   Serial.println("Relay status: OFF");
+  server.send(200, "text/html", getHTML());
+}
+
+void handle_RGBOn(){
+  RGB_STATUS = HIGH;
+  Serial.println("RGB LED status: ON");
+  server.send(200, "text/html", getHTML());
+}
+
+void handle_RGBOff(){
+  RGB_STATUS = LOW;
+  Serial.println("RGB LED status: OFF");
   server.send(200, "text/html", getHTML());
 }
 
@@ -299,10 +348,31 @@ void TaskBlink(void *pvParameters) {  // This is a task.
   
 
   while(1) {    
-    digitalWrite(LED_BUILTIN, HIGH);  // turn the LED ON
+    server.handleClient();
+
+    digitalWrite(LED_BUILTIN, LED_BUILTIN_STATUS);  // turn the LED ON
+    LED_BUILTIN_STATUS = !LED_BUILTIN_STATUS;
+
+    if(RELAY_AUTO_COUNT != 0) --RELAY_AUTO_COUNT;
+
+    tempS = (String)temp;
+    humidS = (String)humid;
+    lightResS = String(lightRes * 100 / 4096);
+    moistS = String(moist * 100 / 4096);
+    // char moistArray[moistS.length() + 1];
+    // Serial.print("1 ");
+    // Serial.println(moistS);
+    // moistS.toCharArray(moistArray, moistS.length() + 1);
+    // Serial.print("2 ");
+    // Serial.println(moistS);
+    // webSocket.broadcastTXT(moistArray);
+    // handle_Onconnect();
+
     delay(1000);
-    digitalWrite(LED_BUILTIN, LOW);  // turn the LED OFF
-    delay(1000);
+
+    // delay(1000);
+    // digitalWrite(LED_BUILTIN, LOW);  // turn the LED OFF
+    // delay(1000);
     // if (sensory.publish(x++)) {
     //   Serial.println(F("Published successfully!!"));
     // }
@@ -344,12 +414,15 @@ void TaskSoilMoistureAndRelay(void *pvParameters) {  // This is a task.
     moist = analogRead(A3);
     // Serial.println(moist);
     
-    if(moist > 500){
-      digitalWrite(D9, LOW);
+    if(RELAY_AUTO_COUNT == 0){
+      if(moist > 500){
+        RELAY_STATUS = LOW;
+      }
+      if(moist < 50){
+        RELAY_STATUS = HIGH;
+      }
     }
-    if(moist < 50){
-      digitalWrite(D9, HIGH);
-    }
+    digitalWrite(D9, RELAY_STATUS);
     delay(1000);
   }
 }
