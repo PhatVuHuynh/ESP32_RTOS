@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WebSocketsServer.h>
+#include <ArduinoJson.h>
 
 // #include "Adafruit_MQTT.h"
 // #include "Adafruit_MQTT_Client.h"
@@ -20,6 +21,8 @@ IPAddress subnet(255,255,255,0);
 
 WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
+JsonDocument doc_tx;
+
 
 // #define AIO_SERVER      "io.adafruit.com"
 // #define AIO_SERVERPORT  1883
@@ -80,10 +83,10 @@ bool RELAY_STATUS = LOW;
 bool RGB_STATUS = LOW;
 uint16_t RELAY_AUTO_COUNT = 0;
 
-String tempS;
-String humidS;
-String lightResS;
-String moistS;
+// String tempS;
+// String humidS;
+// String lightResS;
+// String moistS;
 
 // void slidercallback(double x) {
 //   Serial.print("Hey we're in a slider callback, the slider value is: ");
@@ -186,13 +189,27 @@ void setup() {
 
 void loop() {
   webSocket.loop();
+  webSocket.onEvent(webSocketEvent);
 
-  uint8_t test[2];
-  test[0] = moist;
-  test[1] = lightRes;
+  String jsonString = "";
+  doc_tx["temp"] = String(temp);
+  doc_tx["humid"] = String(humid);
+  doc_tx["moist"] = String(moist * 100 / 4096);
+  doc_tx["light"] = String(lightRes * 100 / 4096);
+  doc_tx["relay"] = RELAY_STATUS;
+  doc_tx["RGB"] = RGB_STATUS;
+  serializeJson(doc_tx, jsonString);
+    
+  webSocket.broadcastTXT(jsonString);
+  delay(2000);
 
-  // webSocket.broadcastTXT(moistS);
-  webSocket.broadcastTXT(test, 16);
+  // uint8_t test[2];
+  // test[0] = moist;
+  // test[1] = lightRes;
+
+  // // webSocket.broadcastTXT(moistS);
+  // webSocket.broadcastTXT(test, 16);
+
   // if(LED_BUILTIN_STATUS){
   //   digitalWrite(LED_BUILTIN, HIGH);
   // }
@@ -206,52 +223,67 @@ void loop() {
   // }
 }
 
+void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
+  JsonDocument doc_rx;
+  switch (type){
+    case WStype_DISCONNECTED:
+      Serial.println("Client Disconnected.");
+      break;
+    case WStype_CONNECTED:
+      Serial.println("Client Connected.");
+      break;
+    case WStype_TEXT:
+      String text;
+      for(int i =0; i < length; ++i){
+        // Serial.print((char)payload[i]);
+        text += (char)payload[i];
+      }
+      deserializeJson(doc_rx, text);
+
+      RGB_STATUS = doc_rx["RGB"];
+      RELAY_STATUS = doc_rx["relay"];
+      
+      Serial.println(text);
+      serializeJson(doc_rx, Serial);
+      Serial.println();
+      break;
+  }
+}
+
 String getHTML(){
   String htmlcode = "<!DOCTYPE html> <html>\n";
   htmlcode += "<head><meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'>\n";
   htmlcode += "<tittle>Test</tittle>\n";
-
-  htmlcode += "<script>\n var Socket;\n";
-  htmlcode += "function init(){\n";
-  htmlcode += "Socket = new WebSocket('ws://' + window.location.hostname + ':81/');\n";
-  htmlcode += "Socket.onmessage = function(event){\n";
-  htmlcode += "processCommand(event);};}\n";
-
-  htmlcode += "function processCommand(event){\n";
-  htmlcode += "document.getElementById('moist').innerHTML = event.data;\n";
-  htmlcode += "document.getElementById('light').innerHTML = event.data[1];\n";
-  htmlcode += "console.log(event);}\n";
-  htmlcode += "window.onload = function(event){\n";
-  htmlcode += "init();}\n";
-  htmlcode += "</script>";
-
   htmlcode += "</head>\n";
+
   htmlcode += "<body>\n";
   htmlcode += "<h1>Yolo Uno Mini Server</h1>\n";
   htmlcode += "<h3>Simple demo using AP mode</h3>\n";
 
-  Serial.print("moist html: ");
-  Serial.println(moistS);
-
   htmlcode += "<p>Temperature: ";
-  htmlcode += tempS;
-  htmlcode += "C</p>\n";
+  // htmlcode += tempS;
+  htmlcode += "<span id = 'temp'></span> *C";
+  htmlcode += "</p>\n";
 
   htmlcode += "<p>Humid: ";
-  htmlcode += humidS;
-  htmlcode += "%</p>\n";
+  // htmlcode += humidS;
+  htmlcode += "<span id = 'humid'></span>%";
+  htmlcode += "</p>\n";
 
   htmlcode += "<p>Moist: ";
   // htmlcode += moistS;
   htmlcode += "<span id = 'moist'></span>%";
   htmlcode += "</p>\n";
 
-  if(RELAY_STATUS){
-    htmlcode += "<p>Relay status: ON</p><a href='/relayOff'>Please turn off relay</a>\n";
-  }
-  else{
-    htmlcode += "<p>Relay status: OFF</p><a href='/relayOn'>Please turn on relay</a>\n";
-  }
+  // if(RELAY_STATUS){
+  //   htmlcode += "<p>Relay status: ON</p><a href='/relayOff'>Please turn off relay</a>\n";
+  // }
+  // else{
+  htmlcode += "<p>Relay status: ";
+  htmlcode += "<span id = 'relay'></span> </p>";
+  htmlcode += "<button type = 'button' id = 'Relay_send'></button>";
+  // htmlcode += "<a href='/relayOn'>Please turn on relay</a>\n";
+  // }
 
   htmlcode += "<p>Light: ";
   // htmlcode += moistS;
@@ -262,14 +294,54 @@ String getHTML(){
   // htmlcode += lightResS;
   // htmlcode += "%</p>\n";
 
-  if(RGB_STATUS){
-    htmlcode += "<p>RGB LED status: ON</p><a href='/RBGOff'>Please turn off RGB LED</a>\n";
-  }
-  else{
-    htmlcode += "<p>RGB LED status: OFF</p><a href='/RBGOn'>Please turn on RGB LED</a>\n";
-  }
+  // if(RGB_STATUS){
+  //   htmlcode += "<p>RGB LED status: ON</p><a href='/RBGOff'>Please turn off RGB LED</a>\n";
+  // }
+  // else{
+  htmlcode += "<p>RGB status: ";
+  htmlcode += "<span id = 'RGB'></span> </p>";
+  htmlcode += "<button type = 'button' id = 'RGB_send'></button>";
+  // htmlcode += "<p>RGB LED status: OFF</p><a href='/RBGOn'>Please turn on RGB LED</a>\n";
+  // }
 
   htmlcode += "</body>\n";
+
+  htmlcode += "<script>\n var Socket; var obj;\n";
+  htmlcode += "document.getElementById('Relay_send').addEventListener('click', relaySend);\n";
+  htmlcode += "document.getElementById('RGB_send').addEventListener('click', rgbSend);\n";
+  htmlcode += "function init(){\n";
+  htmlcode += "Socket = new WebSocket('ws://' + window.location.hostname + ':81/');\n";
+  htmlcode += "Socket.onmessage = function(event){\n";
+  htmlcode += "processCommand(event);};}\n";
+
+  htmlcode += "function processCommand(event){\n";
+  // htmlcode += "console.log(event);\n";
+  htmlcode += "obj = JSON.parse(event.data);\n";
+  htmlcode += "console.log(obj);\n";
+  htmlcode += "document.getElementById('temp').innerHTML = obj.temp;\n";
+  htmlcode += "document.getElementById('humid').innerHTML = obj.humid;\n";
+  htmlcode += "document.getElementById('moist').innerHTML = obj.moist;\n";
+  htmlcode += "document.getElementById('relay').innerHTML = obj.relay == true ? 'ON' : 'OFF';\n";
+  htmlcode += "document.getElementById('Relay_send').innerHTML = obj.relay == true ? 'Turn off relay' : 'Turn on relay';\n";
+  htmlcode += "document.getElementById('light').innerHTML = obj.light;\n";
+  htmlcode += "document.getElementById('RGB').innerHTML = obj.RGB == true ? 'ON' : 'OFF';\n";
+  htmlcode += "document.getElementById('RGB_send').innerHTML = obj.RGB == true ? 'Turn off RGB' : 'Turn on RGB';}\n";
+  // htmlcode += "console.log(obj);}\n";
+
+  htmlcode += "function relaySend(){\n";
+  htmlcode += "let sendRelay = JSON.stringify({relay: !obj.relay});\n";
+  htmlcode += "console.log(sendRelay);\n";
+  htmlcode += "Socket.send(sendRelay);}\n";
+
+  htmlcode += "function rgbSend(){\n";
+  htmlcode += "let sendRGB = JSON.stringify({RGB: !obj.RGB});\n";
+  htmlcode += "console.log(sendRGB);\n";
+  htmlcode += "Socket.send(sendRGB);}\n";
+
+  htmlcode += "window.onload = function(event){\n";
+  htmlcode += "init();}\n";
+  htmlcode += "</script>";
+
   htmlcode += "</html>\n";
 
   return htmlcode;
@@ -354,25 +426,7 @@ void TaskBlink(void *pvParameters) {  // This is a task.
     LED_BUILTIN_STATUS = !LED_BUILTIN_STATUS;
 
     if(RELAY_AUTO_COUNT != 0) --RELAY_AUTO_COUNT;
-
-    tempS = (String)temp;
-    humidS = (String)humid;
-    lightResS = String(lightRes * 100 / 4096);
-    moistS = String(moist * 100 / 4096);
-    // char moistArray[moistS.length() + 1];
-    // Serial.print("1 ");
-    // Serial.println(moistS);
-    // moistS.toCharArray(moistArray, moistS.length() + 1);
-    // Serial.print("2 ");
-    // Serial.println(moistS);
-    // webSocket.broadcastTXT(moistArray);
-    // handle_Onconnect();
-
     delay(1000);
-
-    // delay(1000);
-    // digitalWrite(LED_BUILTIN, LOW);  // turn the LED OFF
-    // delay(1000);
     // if (sensory.publish(x++)) {
     //   Serial.println(F("Published successfully!!"));
     // }
@@ -437,6 +491,7 @@ void TaskLightAndLED(void *pvParameters) {  // This is a task.
     // Serial.println(lightRes);
 
     if(lightRes < 350){
+      RGB_STATUS = HIGH;
       pixels3.setPixelColor(0, pixels3.Color(255,0,0));
       pixels3.setPixelColor(1, pixels3.Color(255,0,0));
       pixels3.setPixelColor(2, pixels3.Color(255,0,0));
@@ -444,6 +499,7 @@ void TaskLightAndLED(void *pvParameters) {  // This is a task.
       pixels3.show();
     }
     if(lightRes > 550){
+      RGB_STATUS = LOW;
       pixels3.setPixelColor(0, pixels3.Color(0,0,0));
       pixels3.setPixelColor(1, pixels3.Color(0,0,0));
       pixels3.setPixelColor(2, pixels3.Color(0,0,0));
