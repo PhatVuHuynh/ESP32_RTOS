@@ -11,6 +11,7 @@
 // #include "Adafruit_MQTT_Client.h"
 
 #define RELAY_MANUAL_AUTO_TIME 10
+#define RGB_MANUAL_AUTO_TIME 10
 
 #define WLAN_SSID "RNM esp sida"
 #define WLAN_PASS "whyarewestillhere"
@@ -82,6 +83,7 @@ bool LED_BUILTIN_STATUS = LOW;
 bool RELAY_STATUS = LOW;
 bool RGB_STATUS = LOW;
 uint16_t RELAY_AUTO_COUNT = 0;
+uint16_t RGB_AUTO_COUNT = 0;
 
 // String tempS;
 // String humidS;
@@ -159,10 +161,10 @@ void setup() {
 
   server.on("/", handle_Onconnect);
   // server.on("/t", handle_temp_humid);
-  server.on("/relayOn", handle_relayOn);
-  server.on("/relayOff", handle_relayOff);
-  server.on("/RGBOn", handle_RGBOn);
-  server.on("/RGBOff", handle_RGBOff);
+  // server.on("/relayOn", handle_relayOn);
+  // server.on("/relayOff", handle_relayOff);
+  // server.on("/RGBOn", handle_RGBOn);
+  // server.on("/RGBOff", handle_RGBOff);
   // server.on("/l", handle_light);
   // server.on("/ledon", handle_ledOn);
   // server.on("/ledoff", handle_ledOff);
@@ -201,7 +203,7 @@ void loop() {
   serializeJson(doc_tx, jsonString);
     
   webSocket.broadcastTXT(jsonString);
-  delay(2000);
+  // delay(2000);
 
   // uint8_t test[2];
   // test[0] = moist;
@@ -224,7 +226,7 @@ void loop() {
 }
 
 void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
-  JsonDocument doc_rx;
+  std::ArduinoJson::JsonDocument doc_rx;
   switch (type){
     case WStype_DISCONNECTED:
       Serial.println("Client Disconnected.");
@@ -238,14 +240,35 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
         // Serial.print((char)payload[i]);
         text += (char)payload[i];
       }
-      deserializeJson(doc_rx, text);
+      std::ArduinoJson::deserializeJson(doc_rx, payload);
+      // Serial.print("-0: ");
+      String dev = doc_rx["dev"];
+      bool status = doc_rx["status"];
+      // Serial.println(t1);
+      // Serial.println(t2);
 
-      RGB_STATUS = doc_rx["RGB"];
-      RELAY_STATUS = doc_rx["relay"];
-      
-      Serial.println(text);
-      serializeJson(doc_rx, Serial);
-      Serial.println();
+      // uint8_t indexOfColon = text.indexOf(':');
+      // String device = text.substring(0, indexOfColon);
+      // String status = text.substring(indexOfColon + 1);
+
+      // Serial.println(text);
+      // Serial.println(indexOfColon);
+      // Serial.println(device);
+      // Serial.println(status);
+
+      // Serial.print("1: ");
+      // Serial.println(RGB_STATUS);
+      // Serial.println(RELAY_STATUS);
+
+      if(device == "relay"){
+        RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
+        RELAY_STATUS = status == "on" ? HIGH : LOW;
+      }
+
+      if(device == "RGB"){
+        RGB_AUTO_COUNT = RGB_MANUAL_AUTO_TIME;
+        RGB_STATUS = status == "on" ? HIGH : LOW;
+      }
       break;
   }
 }
@@ -317,7 +340,7 @@ String getHTML(){
   htmlcode += "function processCommand(event){\n";
   // htmlcode += "console.log(event);\n";
   htmlcode += "obj = JSON.parse(event.data);\n";
-  htmlcode += "console.log(obj);\n";
+  // htmlcode += "console.log(obj);\n";
   htmlcode += "document.getElementById('temp').innerHTML = obj.temp;\n";
   htmlcode += "document.getElementById('humid').innerHTML = obj.humid;\n";
   htmlcode += "document.getElementById('moist').innerHTML = obj.moist;\n";
@@ -329,14 +352,18 @@ String getHTML(){
   // htmlcode += "console.log(obj);}\n";
 
   htmlcode += "function relaySend(){\n";
-  htmlcode += "let sendRelay = JSON.stringify({relay: !obj.relay});\n";
-  htmlcode += "console.log(sendRelay);\n";
-  htmlcode += "Socket.send(sendRelay);}\n";
+  // htmlcode += "let send = document.getElementById('Relay_send').innerHTML;\n";
+  // htmlcode += "send = send.split(' ');\n";
+  // htmlcode += "console.log(send);\n";
+  // htmlcode += "Socket.send(send[2] + ':' + send[1]);}\n";
+  htmlcode += "Socket.send(JSON.stringify({dev: 'relay', status: !obj.relay}));\n";
 
   htmlcode += "function rgbSend(){\n";
-  htmlcode += "let sendRGB = JSON.stringify({RGB: !obj.RGB});\n";
-  htmlcode += "console.log(sendRGB);\n";
-  htmlcode += "Socket.send(sendRGB);}\n";
+  // htmlcode += "let send = document.getElementById('RGB_send').innerHTML;\n";
+  // htmlcode += "send = send.split(' ');\n";
+  // htmlcode += "console.log(send);\n";
+  // htmlcode += "Socket.send(send[2] + ':' + send[1]);}\n";
+  htmlcode += "Socket.send(JSON.stringify({dev: 'RGB', status: !obj.RGB}));\n";
 
   htmlcode += "window.onload = function(event){\n";
   htmlcode += "init();}\n";
@@ -359,31 +386,31 @@ void handle_Onconnect(){
 //   server.send(200, "text/html", getHTML());
 // }
 
-void handle_relayOn(){
-  RELAY_STATUS = HIGH;
-  RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
-  Serial.println("Relay status: ON");
-  server.send(200, "text/html", getHTML());
-}
+// void handle_relayOn(){
+//   RELAY_STATUS = HIGH;
+//   RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
+//   Serial.println("Relay status: ON");
+//   server.send(200, "text/html", getHTML());
+// }
 
-void handle_relayOff(){
-  RELAY_STATUS = LOW;
-  RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
-  Serial.println("Relay status: OFF");
-  server.send(200, "text/html", getHTML());
-}
+// void handle_relayOff(){
+//   RELAY_STATUS = LOW;
+//   RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
+//   Serial.println("Relay status: OFF");
+//   server.send(200, "text/html", getHTML());
+// }
 
-void handle_RGBOn(){
-  RGB_STATUS = HIGH;
-  Serial.println("RGB LED status: ON");
-  server.send(200, "text/html", getHTML());
-}
+// void handle_RGBOn(){
+//   RGB_STATUS = HIGH;
+//   Serial.println("RGB LED status: ON");
+//   server.send(200, "text/html", getHTML());
+// }
 
-void handle_RGBOff(){
-  RGB_STATUS = LOW;
-  Serial.println("RGB LED status: OFF");
-  server.send(200, "text/html", getHTML());
-}
+// void handle_RGBOff(){
+//   RGB_STATUS = LOW;
+//   Serial.println("RGB LED status: OFF");
+//   server.send(200, "text/html", getHTML());
+// }
 
 // void handle_light(){
 //   // LED_BUILTIN_STATUS = LOW;
@@ -426,6 +453,7 @@ void TaskBlink(void *pvParameters) {  // This is a task.
     LED_BUILTIN_STATUS = !LED_BUILTIN_STATUS;
 
     if(RELAY_AUTO_COUNT != 0) --RELAY_AUTO_COUNT;
+    if(RGB_AUTO_COUNT != 0) --RGB_AUTO_COUNT;
     delay(1000);
     // if (sensory.publish(x++)) {
     //   Serial.println(F("Published successfully!!"));
@@ -490,16 +518,23 @@ void TaskLightAndLED(void *pvParameters) {  // This is a task.
     lightRes = analogRead(A2);
     // Serial.println(lightRes);
 
-    if(lightRes < 350){
-      RGB_STATUS = HIGH;
+    if(RGB_AUTO_COUNT == 0){
+      if(lightRes < 350){
+        RGB_STATUS = HIGH;
+      }
+      if(lightRes > 550){
+        RGB_STATUS = LOW;
+      }
+    }
+
+    if(RGB_STATUS){
       pixels3.setPixelColor(0, pixels3.Color(255,0,0));
       pixels3.setPixelColor(1, pixels3.Color(255,0,0));
       pixels3.setPixelColor(2, pixels3.Color(255,0,0));
       pixels3.setPixelColor(3, pixels3.Color(255,0,0));
       pixels3.show();
     }
-    if(lightRes > 550){
-      RGB_STATUS = LOW;
+    else{
       pixels3.setPixelColor(0, pixels3.Color(0,0,0));
       pixels3.setPixelColor(1, pixels3.Color(0,0,0));
       pixels3.setPixelColor(2, pixels3.Color(0,0,0));
