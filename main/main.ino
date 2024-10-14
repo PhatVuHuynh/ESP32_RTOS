@@ -82,8 +82,11 @@ uint16_t lightRes = 0;
 bool LED_BUILTIN_STATUS = LOW;
 bool RELAY_STATUS = LOW;
 bool RGB_STATUS = LOW;
-uint16_t RELAY_AUTO_COUNT = 0;
-uint16_t RGB_AUTO_COUNT = 0;
+// bool RELAY_CHECKED = LOW;
+// bool RGB_CHECKED = LOW;
+
+uint16_t RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
+uint16_t RGB_AUTO_COUNT = RGB_MANUAL_AUTO_TIME;
 
 // String tempS;
 // String humidS;
@@ -226,7 +229,7 @@ void loop() {
 }
 
 void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
-  std::ArduinoJson::JsonDocument doc_rx;
+  JsonDocument doc_rx;
   switch (type){
     case WStype_DISCONNECTED:
       Serial.println("Client Disconnected.");
@@ -235,15 +238,20 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
       Serial.println("Client Connected.");
       break;
     case WStype_TEXT:
-      String text;
-      for(int i =0; i < length; ++i){
-        // Serial.print((char)payload[i]);
-        text += (char)payload[i];
-      }
-      std::ArduinoJson::deserializeJson(doc_rx, payload);
+      // String text;
+      // for(int i =0; i < length; ++i){
+      //   // Serial.print((char)payload[i]);
+      //   text += (char)payload[i];
+      // }
+      deserializeJson(doc_rx, payload);
+      serializeJson(doc_rx, Serial);
       // Serial.print("-0: ");
       String dev = doc_rx["dev"];
       bool status = doc_rx["status"];
+      bool checked = doc_rx["checked"];
+      Serial.println(dev);
+      Serial.println(status);
+      Serial.println(checked);
       // Serial.println(t1);
       // Serial.println(t2);
 
@@ -260,14 +268,37 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
       // Serial.println(RGB_STATUS);
       // Serial.println(RELAY_STATUS);
 
-      if(device == "relay"){
-        RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
-        RELAY_STATUS = status == "on" ? HIGH : LOW;
+      if(dev == "relay"){
+        // RELAY_CHECKED = checked;
+        // if(RELAY_CHECKED){
+        //   RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
+        // }
+
+        if(checked){
+          RELAY_AUTO_COUNT = 0;
+        }
+        else{
+          RELAY_AUTO_COUNT = RELAY_MANUAL_AUTO_TIME;
+        }
+
+        RELAY_STATUS = status;
       }
 
-      if(device == "RGB"){
-        RGB_AUTO_COUNT = RGB_MANUAL_AUTO_TIME;
-        RGB_STATUS = status == "on" ? HIGH : LOW;
+      if(dev == "RGB"){
+        // RGB_CHECKED = checked;
+        // if(RGB_CHECKED){
+        //   RGB_AUTO_COUNT = RGB_MANUAL_AUTO_TIME;
+        // }
+        
+        if(checked){
+          RGB_AUTO_COUNT = 0;
+        }
+        else{
+          RGB_AUTO_COUNT = RGB_MANUAL_AUTO_TIME;
+        }
+        Serial.println(RGB_AUTO_COUNT);
+
+        RGB_STATUS = status;
       }
       break;
   }
@@ -276,62 +307,66 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length){
 String getHTML(){
   String htmlcode = "<!DOCTYPE html> <html>\n";
   htmlcode += "<head><meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'>\n";
-  htmlcode += "<tittle>Test</tittle>\n";
+  htmlcode += "<tittle><h1>Yolo Uno Mini Server</h1></tittle>\n";
+    htmlcode += "<style>\n";
+      htmlcode += "body {font-family: Arial, sans-serif; background-color: #f0f0f0; color: #333; text-align: center;}\n";
+      htmlcode += ".button {padding: 15px 50px; font-size: 24px; text-align: center; outline: none; color: #fff; background-color: #0f8b8d; border: none; border-radius: 5px; -webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);}\n";
+      htmlcode += ".content {padding: 30px; max-width: 1200px; margin: 0 auto;}\n";
+      htmlcode += ".card {background-color: #F8F7F9; box-shadow: 2px 2px 12px 1px rgba(140, 140, 140, .5); padding-top: 10px; padding-bottom: 20px; margin: 10px; flex: 1 1 calc(50% - 20px); /* Default to 2 cards per row */}\n";
+    htmlcode += "</style>\n";
   htmlcode += "</head>\n";
 
   htmlcode += "<body>\n";
-  htmlcode += "<h1>Yolo Uno Mini Server</h1>\n";
-  htmlcode += "<h3>Simple demo using AP mode</h3>\n";
+  // htmlcode += "<h1>Yolo Uno Mini Server</h1>\n";
+  // htmlcode += "<h3>Simple demo using AP mode</h3>\n";
+  htmlcode += "<div class = 'content'>\n";
+    htmlcode += "<div class = 'card'>\n";
+      htmlcode += "<p>Temperature: ";
+      htmlcode += "<span id = 'temp'></span> &deg;C </p>\n";
 
-  htmlcode += "<p>Temperature: ";
-  // htmlcode += tempS;
-  htmlcode += "<span id = 'temp'></span> *C";
-  htmlcode += "</p>\n";
+      htmlcode += "<p>Humid: ";
+      htmlcode += "<span id = 'humid'></span>%</p>\n";
+    htmlcode += "</div>\n";
+  htmlcode += "</div>\n";
 
-  htmlcode += "<p>Humid: ";
-  // htmlcode += humidS;
-  htmlcode += "<span id = 'humid'></span>%";
-  htmlcode += "</p>\n";
+  htmlcode += "<div class = 'content'>\n";
+    htmlcode += "<div class = 'card'>\n";
+      htmlcode += "<p>Moist: ";
+      htmlcode += "<span id = 'moist'></span>%</p>\n";
 
-  htmlcode += "<p>Moist: ";
-  // htmlcode += moistS;
-  htmlcode += "<span id = 'moist'></span>%";
-  htmlcode += "</p>\n";
+      htmlcode += "<p>Relay status: ";
+      htmlcode += "<span id = 'relay'></span> </p>";
+      htmlcode += "<button type = 'button' id = 'Relay_send'></button>";
+      htmlcode += "<br>\n";
+      htmlcode += "<br>\n";
+      htmlcode += "<input type = 'checkbox' id = 'Relay_manual'>";
+      htmlcode += "<span id = 'Relay_label'></span>";
+    htmlcode += "</div>\n";
+  htmlcode += "</div>\n";
 
-  // if(RELAY_STATUS){
-  //   htmlcode += "<p>Relay status: ON</p><a href='/relayOff'>Please turn off relay</a>\n";
-  // }
-  // else{
-  htmlcode += "<p>Relay status: ";
-  htmlcode += "<span id = 'relay'></span> </p>";
-  htmlcode += "<button type = 'button' id = 'Relay_send'></button>";
-  // htmlcode += "<a href='/relayOn'>Please turn on relay</a>\n";
-  // }
-
-  htmlcode += "<p>Light: ";
-  // htmlcode += moistS;
-  htmlcode += "<span id = 'light'></span>%";
-  htmlcode += "</p>\n";
-
-  // htmlcode += "<p>Light: ";
-  // htmlcode += lightResS;
-  // htmlcode += "%</p>\n";
-
-  // if(RGB_STATUS){
-  //   htmlcode += "<p>RGB LED status: ON</p><a href='/RBGOff'>Please turn off RGB LED</a>\n";
-  // }
-  // else{
-  htmlcode += "<p>RGB status: ";
-  htmlcode += "<span id = 'RGB'></span> </p>";
-  htmlcode += "<button type = 'button' id = 'RGB_send'></button>";
-  // htmlcode += "<p>RGB LED status: OFF</p><a href='/RBGOn'>Please turn on RGB LED</a>\n";
-  // }
+  htmlcode += "<div class = 'content'>\n";
+    htmlcode += "<div class = 'card'>\n";
+      htmlcode += "<p>Light: ";
+      htmlcode += "<span id = 'light'></span>%</p>\n";
+    
+      htmlcode += "<p>RGB status: ";
+      htmlcode += "<span id = 'RGB'></span> </p>";
+      htmlcode += "<button type = 'button' id = 'RGB_send'></button>";
+      htmlcode += "<br>\n";
+      htmlcode += "<br>\n";
+      htmlcode += "<input type = 'checkbox' id = 'RGB_manual'>";
+      htmlcode += "<span id = 'RGB_label'></span>";
+    htmlcode += "</div>\n";
+  htmlcode += "</div>\n";
 
   htmlcode += "</body>\n";
 
   htmlcode += "<script>\n var Socket; var obj;\n";
   htmlcode += "document.getElementById('Relay_send').addEventListener('click', relaySend);\n";
   htmlcode += "document.getElementById('RGB_send').addEventListener('click', rgbSend);\n";
+  htmlcode += "document.getElementById('Relay_manual').addEventListener('click', relayCheck);\n";
+  htmlcode += "document.getElementById('RGB_manual').addEventListener('click', rgbCheck);\n";
+
   htmlcode += "function init(){\n";
   htmlcode += "Socket = new WebSocket('ws://' + window.location.hostname + ':81/');\n";
   htmlcode += "Socket.onmessage = function(event){\n";
@@ -346,28 +381,32 @@ String getHTML(){
   htmlcode += "document.getElementById('moist').innerHTML = obj.moist;\n";
   htmlcode += "document.getElementById('relay').innerHTML = obj.relay == true ? 'ON' : 'OFF';\n";
   htmlcode += "document.getElementById('Relay_send').innerHTML = obj.relay == true ? 'Turn off relay' : 'Turn on relay';\n";
+  htmlcode += "document.getElementById('Relay_label').innerHTML = document.getElementById('Relay_manual').checked ? 'Auto is off' : 'Auto is on';\n";
   htmlcode += "document.getElementById('light').innerHTML = obj.light;\n";
   htmlcode += "document.getElementById('RGB').innerHTML = obj.RGB == true ? 'ON' : 'OFF';\n";
-  htmlcode += "document.getElementById('RGB_send').innerHTML = obj.RGB == true ? 'Turn off RGB' : 'Turn on RGB';}\n";
-  // htmlcode += "console.log(obj);}\n";
+  htmlcode += "document.getElementById('RGB_send').innerHTML = obj.RGB == true ? 'Turn off RGB' : 'Turn on RGB';\n";
+  htmlcode += "document.getElementById('RGB_label').innerHTML = document.getElementById('RGB_manual').checked ? 'Auto is off' : 'Auto is on';\n";
+  htmlcode += "}\n";
+
+  htmlcode += "function relayCheck(){\n";
+  htmlcode += "Socket.send(JSON.stringify({dev: 'relay', status: obj.relay, checked: document.getElementById('Relay_manual').checked}));}\n";
+
+  htmlcode += "function rgbCheck(){\n";
+  htmlcode += "Socket.send(JSON.stringify({dev: 'RGB', status: obj.RGB, checked: document.getElementById('RGB_manual').checked}));}\n";
 
   htmlcode += "function relaySend(){\n";
   // htmlcode += "let send = document.getElementById('Relay_send').innerHTML;\n";
   // htmlcode += "send = send.split(' ');\n";
   // htmlcode += "console.log(send);\n";
   // htmlcode += "Socket.send(send[2] + ':' + send[1]);}\n";
-  htmlcode += "Socket.send(JSON.stringify({dev: 'relay', status: !obj.relay}));\n";
+  htmlcode += "Socket.send(JSON.stringify({dev: 'relay', status: !obj.relay, checked: document.getElementById('Relay_manual').checked}));}\n";
 
   htmlcode += "function rgbSend(){\n";
-  // htmlcode += "let send = document.getElementById('RGB_send').innerHTML;\n";
-  // htmlcode += "send = send.split(' ');\n";
-  // htmlcode += "console.log(send);\n";
-  // htmlcode += "Socket.send(send[2] + ':' + send[1]);}\n";
-  htmlcode += "Socket.send(JSON.stringify({dev: 'RGB', status: !obj.RGB}));\n";
+  htmlcode += "Socket.send(JSON.stringify({dev: 'RGB', status: !obj.RGB, checked: document.getElementById('RGB_manual').checked}));}\n";
 
   htmlcode += "window.onload = function(event){\n";
   htmlcode += "init();}\n";
-  htmlcode += "</script>";
+  htmlcode += "</script>\n";
 
   htmlcode += "</html>\n";
 
@@ -452,8 +491,11 @@ void TaskBlink(void *pvParameters) {  // This is a task.
     digitalWrite(LED_BUILTIN, LED_BUILTIN_STATUS);  // turn the LED ON
     LED_BUILTIN_STATUS = !LED_BUILTIN_STATUS;
 
-    if(RELAY_AUTO_COUNT != 0) --RELAY_AUTO_COUNT;
-    if(RGB_AUTO_COUNT != 0) --RGB_AUTO_COUNT;
+    // if(RELAY_AUTO_COUNT != 0 && !RELAY_CHECKED) --RELAY_AUTO_COUNT;
+    // if(RGB_AUTO_COUNT != 0 && !RGB_CHECKED) --RGB_AUTO_COUNT;
+    if(RELAY_AUTO_COUNT > 1) --RELAY_AUTO_COUNT;
+    if(RGB_AUTO_COUNT > 1) --RGB_AUTO_COUNT;
+    // Serial.println(RGB_AUTO_COUNT);
     delay(1000);
     // if (sensory.publish(x++)) {
     //   Serial.println(F("Published successfully!!"));
@@ -496,7 +538,7 @@ void TaskSoilMoistureAndRelay(void *pvParameters) {  // This is a task.
     moist = analogRead(A3);
     // Serial.println(moist);
     
-    if(RELAY_AUTO_COUNT == 0){
+    if(RELAY_AUTO_COUNT == 1){
       if(moist > 500){
         RELAY_STATUS = LOW;
       }
@@ -518,7 +560,7 @@ void TaskLightAndLED(void *pvParameters) {  // This is a task.
     lightRes = analogRead(A2);
     // Serial.println(lightRes);
 
-    if(RGB_AUTO_COUNT == 0){
+    if(RGB_AUTO_COUNT == 1){
       if(lightRes < 350){
         RGB_STATUS = HIGH;
       }
